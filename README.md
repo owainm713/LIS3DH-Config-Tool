@@ -11,5 +11,7 @@ you want
 This is not a how-to tool. To figure out the LIS3DH both the datasheet and
 app note are extremely valuable.
 
-This is a work in progress,  I do plan on adding the ability to save/load configurations
-and maybe make some templates for basic LIS3DH use.
+January 8, 2019 Update
+- added save/open feature, including autosave
+- added some templates, may add more as I play around with it more
+- added Notes and note editor

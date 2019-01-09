@@ -3,10 +3,12 @@
 configure the registers of an LIS3DH accelerometer
 
 created December 9, 2018
-modified December 15, 2018 """
+modified December 21, 2018
+modified January 7, 2019 - Added save and open file options, also added
+note edit option"""
 
 """
-Copyright 2018 Owain Martin
+Copyright 2018, 2019 Owain Martin
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -22,13 +24,14 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 """
 
-from tkinter import *  
+from tkinter import *
+import tkinter.filedialog
+import pickle, os
 
     
 class LIS3DHConfigGui:
 
     def __init__(self, master):
-
 
         #-------- accelerometer set up ---------------
 
@@ -81,8 +84,7 @@ class LIS3DHConfigGui:
         self.hpfFDS = StringVar(value = 'off')
         self.hpfClick = StringVar(value = 'off')
         self.hpfIS2 = StringVar(value = 'off')
-        self.hpfIS1 = StringVar(value = 'off')
-        
+        self.hpfIS1 = StringVar(value = 'off')        
 
         # int1 variables - CTRL_REG3
         self.int1_aoi1 =IntVar(value = 0)
@@ -120,14 +122,38 @@ class LIS3DHConfigGui:
         self.click_timewindow = IntVar(value = 0)
         
         self.regValueText = StringVar()
+        self.notesText = StringVar(value = "Put some insightful information here to help the user along.\n\n This is also a space for the user to add their own notes.")
+
+        self.load_data()  # load autosavesettings - i.e. last used settings
 
         #------------ GUI set up --------------------------
 
         fgColour = 'green'
 
+        # menu bar set up
+        mainMenu = Menu(master, tearoff=0)
+        
+        fileMenu = Menu(mainMenu, tearoff = 0)
+        fileMenu.add_command(label = 'Save', command = self.save_to_file)
+        fileMenu.add_command(label = 'Open', command = self.load_from_file)
+        fileMenu.add_separator()
+        fileMenu.add_command(label = 'TEMPLATES', command = self.load_from_template)
+        fileMenu.add_separator()
+        fileMenu.add_command(label = 'Exit', command = self.exit_tool)
+
+        editMenu = Menu(mainMenu, tearoff = 0)
+        editMenu.add_command(label = 'Notes', command = self.edit_note)       
+       
+
+        mainMenu.add_cascade(label = 'File', menu = fileMenu)
+        mainMenu.add_cascade(label = 'Edit', menu = editMenu)        
+        
+        master.config(menu = mainMenu) 
+        
+
         # set up main options frame area
         self.optionFrame = LabelFrame(master, text = 'LIS3DH Options', fg = fgColour)
-        self.optionFrame.grid(row = 0, column = 0, padx= 5, pady= 5, sticky = (N,S,W,E))
+        self.optionFrame.grid(row = 0, column = 0, rowspan = 2, padx= 5, pady= 5, sticky = (N,S,W,E))
 
         # set up power mode options
         self.pwrModeOptionsFrame = LabelFrame(self.optionFrame, text = 'Power Mode Options', fg = fgColour)
@@ -486,21 +512,24 @@ class LIS3DHConfigGui:
         clickTimeWindowText = Entry(self.clickConfigFrame, width=6, fg = fgColour,textvariable = self.click_timewindow)
         clickTimeWindowText.grid(row = 2, column = 5)
         clickTimeWindowText.bind("<Return>", self.set_click_timewindow)
-        clickTimeWindowText.bind("<FocusOut>", self.set_click_timewindow)
-        
-
-        # items to still include:             
-        # HP filter
+        clickTimeWindowText.bind("<FocusOut>", self.set_click_timewindow)        
         
 
         # set up main register info display area
         self.regValueFrame = LabelFrame(master, text = 'Register Values', fg = fgColour)
         self.regValueFrame.grid(row = 0, column =1, padx=5, pady=5, sticky = (N,S,W,E))
-        self.regValueTextArea = Label(self.regValueFrame, textvariable=self.regValueText, width = 40, anchor = W,
+        self.regValueTextArea = Label(self.regValueFrame, textvariable=self.regValueText, width = 40,  anchor = NW,
                                       justify = LEFT, fg = fgColour )
         self.regValueTextArea.grid(row = 0, column = 0)
 
-        self.print_reg_values() # update the text screen
+        # set up notes area
+        self.notesFrame = LabelFrame(master, text = 'Notes', fg = fgColour)
+        self.notesFrame.grid(row = 1, column =1, padx=5, pady=5, sticky = (N,S,W,E))
+        self.notesTextArea = Label(self.notesFrame, textvariable=self.notesText, width = 40, height = 20,  anchor = NW,
+                                      justify = LEFT, wraplength = 320, fg = fgColour )
+        self.notesTextArea.grid(row = 0, column = 0)
+
+        self.print_reg_values() # update the register text screen        
 
         return    
 
@@ -524,8 +553,11 @@ class LIS3DHConfigGui:
         info = info + "TIME_WINDOW: "+str(hex(self.TIME_WINDOW))+" "+str(bin(self.TIME_WINDOW))+" "+str(self.TIME_WINDOW)+"\n"        
 
         self.regValueText.set(info)
+        self.save_data()
 
-        return
+        return            
+            
+                
 
     def axis_enable(self):
         """axis_enable, function to enable/disable the x, y and z axis"""
@@ -1173,16 +1205,279 @@ class LIS3DHConfigGui:
 
         return
 
+    def edit_note(self):
+        """edit_note, function to open a pop up window for editting
+        the current note"""
 
-    
+        # create separate window to enter text
+        self.noteEntryScreen = Toplevel()
+        self.noteEntryScreen.title('Note Entry')
+
+        # for closure with window X, specify action to perform
+        self.noteEntryScreen.protocol("WM_DELETE_WINDOW", self.noteEntryScreen.destroy)
+
+        # Entry area with entry button for submitting info
+        self.entryText = self.notesText.get()
+        self.entry = Text(self.noteEntryScreen, width=40, fg='red', wrap = WORD)
+        self.entry.insert("1.0", self.entryText)  # 1.0 refers to line 1, column 0
+        self.entry.grid(row = 0, column = 0, sticky = W+E+N+S)        
+
+        self.submitButton = Button(self.noteEntryScreen, text='Enter', fg='red', command=self.submit_note)
+        self.submitButton.grid(row = 1, column = 0, sticky = (W,E), padx=5, pady=5)
+
+        return
 
 
+    def submit_note(self, event = None):
+        """submit_note, function to update the notesText from user submitted
+        input"""
 
+        self.notesText.set(self.entry.get("1.0", END))  # 1.0 refers to line 1, column 0
+        self.noteEntryScreen.destroy()
+        self.save_data()
 
+        return
+
+    def exit_tool(self):
+        """exit_tool, function to exit tool"""
+
+        root.destroy()
+
+        return
+
+    def save_to_file(self):
+        """save_to_file, function to save the current config setting to a
+        user specific file"""
+
+        targetDirectory = os.path.dirname(os.path.realpath(__file__))
+        fileName = tkinter.filedialog.asksaveasfilename(title = 'Choose file to save To', initialdir = targetDirectory)
+
+        if (fileName != '' and len(fileName) != 0):
+            self.save_data(fileName)
+
+        return
+
+    def load_from_file(self):
+        """load_from_file, function to load the current config setting from a
+        user specific file"""        
+
+        targetDirectory = os.path.dirname(os.path.realpath(__file__))
+        fileName = tkinter.filedialog.askopenfilename(title = 'Choose file to load from', initialdir = targetDirectory)
+
+        if (fileName != '' and len(fileName) != 0):
+            self.load_data(fileName)
+
+        return
+
+    def load_from_template(self):
+        """load_from_template, function to load the current config setting from a
+        template file"""
+
+        targetDirectory = os.path.dirname(os.path.realpath(__file__))+'/TEMPLATES'
+        fileName = tkinter.filedialog.askopenfilename(title = 'Choose file to load from', initialdir = targetDirectory)
+
+        if (fileName != '' and len(fileName) != 0):
+            self.load_data(fileName)
+
+        return
+        
+
+    def save_data(self, file = None):
+        """save_data, function to save current config tool settings"""
+
+        filelocation = os.path.dirname(os.path.realpath(__file__))
+        filename = '/autosavesettings'
+
+        if file == None:
+            file = filelocation+filename
+
+        data = {}
+
+        data['CTRL_REG1'] = self.CTRL_REG1
+        data['CTRL_REG2'] = self.CTRL_REG2
+        data['CTRL_REG3'] = self.CTRL_REG3
+        data['CTRL_REG4'] = self.CTRL_REG4
+        data['CTRL_REG5'] = self.CTRL_REG5
+        data['CTRL_REG6'] = self.CTRL_REG6
+        data['TEMP_CFG_REG'] = self.TEMP_CFG_REG
+        data['FIFO_CTRL_REG'] = self.FIFO_CTRL_REG
+        data['INT1_CFG'] = self.INT1_CFG
+        data['INT1_THS'] = self.INT1_THS
+        data['INT1_DURATION'] = self.INT1_DURATION
+        data['CLICK_CFG'] = self.CLICK_CFG
+        data['CLICK_THS'] = self.CLICK_THS
+        data['TIME_LIMIT'] = self.TIME_LIMIT
+        data['TIME_LATENCY'] = self.TIME_LATENCY
+        data['TIME_WINDOW'] = self.TIME_WINDOW
+
+        data['adc'] = self.adc.get()
+        data['bdu'] = self.bdu.get()
+        data['endian'] = self.endian.get()
+        data['fourD'] = self.fourD.get() 
+        data['intLevel'] = self.intLevel.get() 
+        data['latch'] = self.latch.get()        
+        data['odr'] = self.odr.get()
+        data['powerMode'] = self.powerMode.get()
+        data['resolution'] = self.resolution.get()   
+        data['scale'] = self.scale.get()
+        data['temperature'] = self.temperature.get()
+        data['xAxis'] = self.xAxis.get()
+        data['yAxis'] = self.yAxis.get()
+        data['zAxis'] = self.zAxis.get()
+
+        data['fifoEnable'] = self.fifoEnable.get()
+        data['fifoMode'] = self.fifoMode.get()
+        data['fifoThreshold'] = self.fifoThreshold.get()
+
+        data['hpfMode'] = self.hpfMode.get()
+        data['hpfCutOff'] = self.hpfCutOff.get()
+        data['hpfFDS'] = self.hpfFDS.get()
+        data['hpfClick'] = self.hpfClick.get()
+        data['hpfIS2'] = self.hpfIS2.get()
+        data['hpfIS1'] = self.hpfIS1.get()
+
+        data['int1_aoi1'] = self.int1_aoi1.get()
+        data['int1_aoi2'] = self.int1_aoi2.get()
+        data['int1_click'] = self.int1_click.get()
+        data['int1_drdy1'] = self.int1_drdy1.get()
+        data['int1_drdy2'] = self.int1_drdy2.get()
+        data['int1_wtm'] = self.int1_wtm.get()
+        data['int1_overrun'] = self.int1_overrun.get()
+        data['int1_aoi'] = self.int1_aoi.get()
+        data['int1_d6'] = self.int1_d6.get()
+        data['int1_zh'] = self.int1_zh.get()
+        data['int1_zl'] = self.int1_zl.get()
+        data['int1_yh'] = self.int1_yh.get()
+        data['int1_yl'] = self.int1_yl.get()
+        data['int1_xh'] = self.int1_xh.get()
+        data['int1_xl'] = self.int1_xl.get()
+        data['int1_duration'] = self.int1_duration.get()
+        data['int1_threshold'] = self.int1_threshold.get()
+
+        data['click_zd'] = self.click_zd.get()
+        data['click_zs'] = self.click_zs.get()
+        data['click_yd'] = self.click_yd.get()
+        data['click_ys'] = self.click_ys.get()
+        data['click_xd'] = self.click_xd.get()
+        data['click_xs'] = self.click_xs.get()
+        data['click_threshold'] = self.click_threshold.get()
+        data['click_timelimit'] = self.click_timelimit.get()
+        data['click_timelatency'] = self.click_timelatency.get()
+        data['click_timewindow'] = self.click_timewindow.get()
+        
+        data['regValueText'] = self.regValueText.get()
+        data['notesText'] = self.notesText.get()        
+
+        try:        
+            with open(file,'wb') as fout:
+                pickle.dump(data,fout,pickle.HIGHEST_PROTOCOL)
+
+        except:
+
+            print("something didn't work saving the settings")
+       
+
+        return
+
+    def load_data(self, file = None):
+        """load_data, function to load configuration data from a file"""
+
+        filelocation = os.path.dirname(os.path.realpath(__file__))
+        filename = '/autosavesettings'
+
+        if file == None:
+            file = filelocation+filename       
+        
+
+        data = {}
+
+        try:        
+            with open(file,'rb') as fin:
+                data=pickle.load(fin)
+       
+        except:
+            print("something didn't work loading the settings")
+
+        self.CTRL_REG1 = data['CTRL_REG1']
+        self.CTRL_REG2 = data['CTRL_REG2']
+        self.CTRL_REG3 = data['CTRL_REG3']
+        self.CTRL_REG4 = data['CTRL_REG4'] 
+        self.CTRL_REG5 = data['CTRL_REG5']
+        self.CTRL_REG6 = data['CTRL_REG6']
+        self.TEMP_CFG_REG = data['TEMP_CFG_REG']
+        self.FIFO_CTRL_REG = data['FIFO_CTRL_REG']
+        self.INT1_CFG = data['INT1_CFG']
+        self.INT1_THS = data['INT1_THS']
+        self.INT1_DURATION = data['INT1_DURATION']
+        self.CLICK_CFG = data['CLICK_CFG']
+        self.CLICK_THS = data['CLICK_THS']
+        self.TIME_LIMIT = data['TIME_LIMIT']
+        self.TIME_LATENCY = data['TIME_LATENCY']
+        self.TIME_WINDOW = data['TIME_WINDOW']
+
+        self.adc.set(data['adc']) 
+        self.bdu.set(data['bdu'])
+        self.endian.set(data['endian'])
+        self.fourD.set(data['fourD']) 
+        self.intLevel.set(data['intLevel']) 
+        self.latch.set(data['latch'])        
+        self.odr.set(data['odr'])
+        self.powerMode.set(data['powerMode'])
+        self.resolution.set(data['resolution'])   
+        self.scale.set(data['scale'])
+        self.temperature.set(data['temperature'])
+        self.xAxis.set(data['xAxis'])
+        self.yAxis.set(data['yAxis'])
+        self.zAxis.set(data['zAxis'])
+
+        self.fifoEnable.set(data['fifoEnable'])
+        self.fifoMode.set(data['fifoMode'])
+        self.fifoThreshold.set(data['fifoThreshold'])
+
+        self.hpfMode.set(data['hpfMode'])
+        self.hpfCutOff.set(data['hpfCutOff'])
+        self.hpfFDS.set(data['hpfFDS'])
+        self.hpfClick.set(data['hpfClick'])
+        self.hpfIS2.set(data['hpfIS2'])
+        self.hpfIS1.set(data['hpfIS1'])
+
+        self.int1_aoi1.set(data['int1_aoi1'])
+        self.int1_aoi2.set(data['int1_aoi2'])
+        self.int1_click.set(data['int1_click'])
+        self.int1_drdy1.set(data['int1_drdy1'])
+        self.int1_drdy2.set(data['int1_drdy2'])
+        self.int1_wtm.set(data['int1_wtm'])
+        self.int1_overrun.set(data['int1_overrun'])
+        self.int1_aoi.set(data['int1_aoi'])
+        self.int1_d6.set(data['int1_d6'])
+        self.int1_zh.set(data['int1_zh'])
+        self.int1_zl.set(data['int1_zl'])
+        self.int1_yh.set(data['int1_yh'])
+        self.int1_yl.set(data['int1_yl'])
+        self.int1_xh.set(data['int1_xh'])
+        self.int1_xl.set(data['int1_xl'])
+        self.int1_duration.set(data['int1_duration'])
+        self.int1_threshold.set(data['int1_threshold'])
+
+        self.click_zd.set(data['click_zd'])
+        self.click_zs.set(data['click_zs'])
+        self.click_yd.set(data['click_yd'])
+        self.click_ys.set(data['click_ys'])
+        self.click_xd.set(data['click_xd'])
+        self.click_xs.set(data['click_xs'])
+        self.click_threshold.set(data['click_threshold'])
+        self.click_timelimit.set(data['click_timelimit'])
+        self.click_timelatency.set(data['click_timelatency'])
+        self.click_timewindow.set(data['click_timewindow'])
+        
+        self.regValueText.set(data['regValueText'])
+        self.notesText.set(data['notesText'])
+
+        return
 
 
 root = Tk()
-root.title("LIS3DH Configuration Tool - v1.0 121518")
+root.title("LIS3DH Configuration Tool - v1.2 010719")
 configTool = LIS3DHConfigGui(root)
 root.mainloop()
 
