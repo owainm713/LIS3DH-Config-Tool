@@ -11,6 +11,9 @@ you want
 This is not a how-to tool. To figure out the LIS3DH both the datasheet and
 app note are extremely valuable.
 
+December 18, 2019 Update
+- added microcontroller examples using Arduino, Circuit Python, Lua/NodeMCU (ESP8266)
+
 January 8, 2019 Update
 - added save/open feature, including autosave
 - added some templates, may add more as I play around with it more
