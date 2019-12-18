@@ -13,6 +13,7 @@ app note are extremely valuable.
 
 December 18, 2019 Update
 - added microcontroller examples using Arduino, Circuit Python, Lua/NodeMCU (ESP8266)
+- these examples use the i2c interface, I might do some SPI examples in the future
 
 January 8, 2019 Update
 - added save/open feature, including autosave
