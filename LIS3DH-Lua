@@ -1,0 +1,139 @@
+--LIS3DH-Lua, program to practice using Lua/NodeMCU
+-- with an ESP8266 and an LIS3DH accelerometer
+
+-- an Adafruit Feather Huzzah (ESP8266) was an connected to
+-- an Adafruit LIS3DH breakout board
+
+-- based on NodeMCU 2.2
+-- created December 18, 2019
+-- modified December 18, 2019
+
+-- id - always 0
+-- pinSDA - 2 - board pin 4  can be any pin 
+-- pinSCL - 1 - board pin 5  can be any pin 
+-- speed - only i2c.SLOW supported
+
+-- Note adafruit documentation has board pin 4 & 5 to NodeMCU 2 & 1 reversed
+
+i2c.setup(0, 2, 1, i2c.SLOW)
+
+-- single byte read
+function read_register(devAddr, regAddr)
+
+    local ack, data
+    
+    i2c.start(0)
+    ack = i2c.address(0,devAddr,i2c.TRANSMITTER) -- 25 = 0x19 - LIS3DH i2c address
+    i2c.write(0,regAddr) -- address of register to read
+    --i2c.stop(0)
+    i2c.start(0)    
+    i2c.address(0, devAddr, i2c.RECEIVER)
+    data = i2c.read(0,1)
+    i2c.stop(0)
+
+    print(ack)
+    --print(string.byte(data))
+
+    return string.byte(data)
+end
+
+-- single byte write
+function write_register(devAddr, regAddr, regValue)
+
+    local ack
+    
+    i2c.start(0)
+    ack = i2c.address(0,devAddr,i2c.TRANSMITTER) -- 25 = 0x19 - LIS3DH i2c address
+    i2c.write(0,regAddr, regValue)       
+    i2c.stop(0)
+
+    print(ack)    
+
+    return
+end
+
+-- multiple byte read of consecutive registers
+function read_multi_register(devAddr, regAddr, numBytes)
+
+    local ack, data
+
+     -- add flag for multiple reads of consecutive registers, otherwise the same
+     -- register is read multiple times - specific requirement for LIS3DH
+    regAddr = bit.bor(0x80,regAddr)
+      
+    i2c.start(0)
+    ack = i2c.address(0,devAddr,i2c.TRANSMITTER) -- 25 = 0x19 - LIS3DH i2c address
+    i2c.write(0,regAddr) -- address of register to read
+    --i2c.stop(0)
+    i2c.start(0)    
+    i2c.address(0, devAddr, i2c.RECEIVER)    
+    data = i2c.read(0,numBytes)  -- returns a string of data
+    i2c.stop(0)
+
+    print(ack)  
+    --print(string.byte(data,1,numBytes))
+    
+
+    return string.byte(data,1,numBytes)
+end
+
+-- multiple byte write of consecutive registers
+function write_multi_register(devAddr, regAddr, regValues)
+
+    local ack
+
+     -- add flag for multiple writes of consecutive registers, otherwise the same
+     -- register is written to multiple times - specific requirement for LIS3DH
+     regAddr = bit.bor(0x80,regAddr)
+      
+    i2c.start(0)
+    ack = i2c.address(0,devAddr,i2c.TRANSMITTER) -- 25 = 0x19 - LIS3DH i2c address
+    i2c.write(0,regAddr, regValues) -- address of register to read
+    i2c.stop(0)
+    
+    print(ack)     
+
+    return
+end
+
+function twos_complement_conversion(msb, lsb)
+
+    local value
+
+    -- test the sign bit, bit 8 of msb   
+    if bit.isset(msb, 7) == true then
+        --print("negative number")        
+        msb = bit.band(msb, 0x7F) -- strip off sign bit       
+        value = bit.lshift(msb, 8) + lsb
+        value = bit.rshift(value, 6) -- remove left justification
+        value = bit.bxor(value, 0x1FF)       
+        value = -(value+1)         
+    else
+        --print("positive number")
+        value = bit.lshift(msb, 8) + lsb 
+        value = bit.rshift(value, 6) -- remove left justification
+    end    
+
+    return value
+end
+
+-- read whoami register, 0x0F, should print 51 -----
+print(read_register(0x19, 0x0F)) 
+
+------------- simple interrupt example --------------
+-- this will produce an interrupt when the 
+-- x-axis goes above the 256mg threshold
+-- Connect LED & resistor to LIS3DH Int to see when 
+-- the interrupt occurs
+-- Interrupt is set to Active High
+
+-- write to CTRL_REG1, 2 & 3
+write_multi_register(0x19, 0x20, {0x47, 0x00, 0x40})
+-- write to INT1_CFG & INT1_THS
+write_register(0x19, 0x30, 0x02)
+write_register(0x19, 0x32, 0x10)
+
+-------- read the x-axis accelerometer registers ------
+xH = read_register(0x19, 0x29)
+xL = read_register(0x19, 0x28)
+print(twos_complement_conversion(xH, xL))
